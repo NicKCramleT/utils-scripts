@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/env/update-kiddo.env"
+
+usage() {
+  cat <<USAGE
+Uso: update-kiddo <rama>
+
+Actualiza el repositorio configurado en el archivo de environment
+utilizando la rama indicada.
+USAGE
+}
+
+if [[ ${1-} == "-h" || ${1-} == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -ne 1 ]]; then
+  echo "Error: debes indicar la rama a actualizar." >&2
+  echo >&2
+  usage >&2
+  exit 1
+fi
+
+BRANCH="$1"
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Error: no se encontró el archivo de environment en $ENV_FILE" >&2
+  exit 1
+fi
+
+# shellcheck source=/dev/null
+source "$ENV_FILE"
+
+if [[ -z "${SOURCE_REPOSITORY-}" ]]; then
+  echo "Error: SOURCE_REPOSITORY no está definido en $ENV_FILE" >&2
+  exit 1
+fi
+
+if [[ ! -d "$SOURCE_REPOSITORY" ]]; then
+  echo "Error: el directorio $SOURCE_REPOSITORY no existe." >&2
+  exit 1
+fi
+
+echo "Actualizando repositorio en $SOURCE_REPOSITORY..."
+
+git -C "$SOURCE_REPOSITORY" fetch origin
+
+echo "Aplicando git pull origin $BRANCH"
+
+git -C "$SOURCE_REPOSITORY" checkout "$BRANCH"
+git -C "$SOURCE_REPOSITORY" pull origin "$BRANCH"
+
+echo "Repositorio actualizado correctamente."
