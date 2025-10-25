@@ -91,18 +91,20 @@ git -C "$SOURCE_REPOSITORY" pull origin "$BRANCH"
 echo "Repositorio actualizado correctamente."
 
 if [[ "$RESTART_SERVICE" == true ]]; then
-  PID_FILE="$SCRIPT_DIR/tailscale.pid"
-  LOG_FILE="$SCRIPT_DIR/tailscale.log"
+  PID_FILE="$SOURCE_REPOSITORY/tailscale.pid"
+  LOG_DIR="$SOURCE_REPOSITORY/logs"
+  LOG_FILE="$LOG_DIR/tailscale.log"
   echo "Reiniciando servicio tailscale..."
 
   if [[ -f "$PID_FILE" ]]; then
     PID_CONTENT="$(<"$PID_FILE")"
     if [[ "$PID_CONTENT" =~ ^[0-9]+$ ]]; then
-      if kill "$PID_CONTENT" 2>/dev/null; then
+      if kill -9 "$PID_CONTENT" 2>/dev/null; then
         echo "Proceso tailscale detenido (PID $PID_CONTENT)."
         rm -f "$PID_FILE"
       else
         echo "Advertencia: no se pudo detener el proceso con PID $PID_CONTENT." >&2
+        rm -f "$PID_FILE"
       fi
     else
       echo "Advertencia: contenido inválido en $PID_FILE. Se iniciará el servicio nuevamente." >&2
@@ -115,6 +117,7 @@ if [[ "$RESTART_SERVICE" == true ]]; then
   echo "Iniciando servicio tailscale en segundo plano..."
   (
     cd "$SOURCE_REPOSITORY"
+    mkdir -p "$LOG_DIR"
     nohup npm run tailscale >>"$LOG_FILE" 2>&1 &
     echo "$!" >"$PID_FILE"
   )
