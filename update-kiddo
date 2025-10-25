@@ -92,6 +92,7 @@ echo "Repositorio actualizado correctamente."
 
 if [[ "$RESTART_SERVICE" == true ]]; then
   PID_FILE="$SCRIPT_DIR/tailscale.pid"
+  LOG_FILE="$SCRIPT_DIR/tailscale.log"
   echo "Reiniciando servicio tailscale..."
 
   if [[ -f "$PID_FILE" ]]; then
@@ -99,16 +100,30 @@ if [[ "$RESTART_SERVICE" == true ]]; then
     if [[ "$PID_CONTENT" =~ ^[0-9]+$ ]]; then
       if kill "$PID_CONTENT" 2>/dev/null; then
         echo "Proceso tailscale detenido (PID $PID_CONTENT)."
+        rm -f "$PID_FILE"
       else
         echo "Advertencia: no se pudo detener el proceso con PID $PID_CONTENT." >&2
       fi
     else
       echo "Advertencia: contenido inválido en $PID_FILE. Se iniciará el servicio nuevamente." >&2
+      rm -f "$PID_FILE"
     fi
   else
     echo "Advertencia: no se encontró $PID_FILE. Se iniciará el servicio." >&2
   fi
 
-  echo "Iniciando servicio tailscale..."
-  (cd "$SOURCE_REPOSITORY" && npm run tailscale)
+  echo "Iniciando servicio tailscale en segundo plano..."
+  (
+    cd "$SOURCE_REPOSITORY"
+    nohup npm run tailscale >>"$LOG_FILE" 2>&1 &
+    echo "$!" >"$PID_FILE"
+  )
+
+  if [[ -f "$PID_FILE" ]]; then
+    NEW_PID="$(<"$PID_FILE")"
+    echo "Servicio tailscale iniciado (PID $NEW_PID)."
+    echo "Los logs se guardan en $LOG_FILE."
+  else
+    echo "Advertencia: no se pudo registrar el PID del servicio tailscale." >&2
+  fi
 fi
