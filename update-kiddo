@@ -6,10 +6,11 @@ ENV_FILE="$SCRIPT_DIR/env/update-kiddo.env"
 
 usage() {
   cat <<USAGE
-Uso: update-kiddo <rama>
+Uso: update-kiddo <rama> [--restart]
 
 Actualiza el repositorio configurado en el archivo de environment
-utilizando la rama indicada.
+utilizando la rama indicada. Si se especifica --restart, reinicia el
+servicio tailscale ejecutando de nuevo "npm run tailscale".
 USAGE
 }
 
@@ -18,14 +19,47 @@ if [[ ${1-} == "-h" || ${1-} == "--help" ]]; then
   exit 0
 fi
 
-if [[ $# -ne 1 ]]; then
+if [[ $# -lt 1 ]]; then
   echo "Error: debes indicar la rama a actualizar." >&2
   echo >&2
   usage >&2
   exit 1
 fi
 
-BRANCH="$1"
+BRANCH=""
+RESTART_SERVICE=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -r|--restart)
+      RESTART_SERVICE=true
+      shift
+      ;;
+    -*)
+      echo "Error: argumento no reconocido: $1" >&2
+      echo >&2
+      usage >&2
+      exit 1
+      ;;
+    *)
+      if [[ -n "$BRANCH" ]]; then
+        echo "Error: rama duplicada: $1" >&2
+        echo >&2
+        usage >&2
+        exit 1
+      fi
+      BRANCH="$1"
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "$BRANCH" ]]; then
+  echo "Error: debes indicar la rama a actualizar." >&2
+  echo >&2
+  usage >&2
+  exit 1
+fi
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Error: no se encontró el archivo de environment en $ENV_FILE" >&2
@@ -55,3 +89,26 @@ git -C "$SOURCE_REPOSITORY" checkout "$BRANCH"
 git -C "$SOURCE_REPOSITORY" pull origin "$BRANCH"
 
 echo "Repositorio actualizado correctamente."
+
+if [[ "$RESTART_SERVICE" == true ]]; then
+  PID_FILE="$SCRIPT_DIR/tailscale.pid"
+  echo "Reiniciando servicio tailscale..."
+
+  if [[ -f "$PID_FILE" ]]; then
+    PID_CONTENT="$(<"$PID_FILE")"
+    if [[ "$PID_CONTENT" =~ ^[0-9]+$ ]]; then
+      if kill "$PID_CONTENT" 2>/dev/null; then
+        echo "Proceso tailscale detenido (PID $PID_CONTENT)."
+      else
+        echo "Advertencia: no se pudo detener el proceso con PID $PID_CONTENT." >&2
+      fi
+    else
+      echo "Advertencia: contenido inválido en $PID_FILE. Se iniciará el servicio nuevamente." >&2
+    fi
+  else
+    echo "Advertencia: no se encontró $PID_FILE. Se iniciará el servicio." >&2
+  fi
+
+  echo "Iniciando servicio tailscale..."
+  (cd "$SOURCE_REPOSITORY" && npm run tailscale)
+fi
