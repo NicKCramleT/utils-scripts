@@ -10,7 +10,8 @@ Uso: update-kiddo <rama> [--restart]
 
 Actualiza el repositorio configurado en el archivo de environment
 utilizando la rama indicada. Si se especifica --restart, reinicia el
-servicio tailscale ejecutando de nuevo "npm run tailscale".
+servicio tailscale compilando y ejecutando los comandos definidos en el
+archivo de environment.
 USAGE
 }
 
@@ -69,6 +70,19 @@ fi
 # shellcheck source=/dev/null
 source "$ENV_FILE"
 
+if [[ ${TAILSCALE_BUILD_COMMAND+x} ]]; then
+  TAILSCALE_BUILD_COMMAND="$TAILSCALE_BUILD_COMMAND"
+else
+  TAILSCALE_BUILD_COMMAND="npm run build"
+fi
+
+TAILSCALE_START_COMMAND="${TAILSCALE_START_COMMAND:-npm run start}"
+
+if [[ -z "$TAILSCALE_START_COMMAND" ]]; then
+  echo "Error: TAILSCALE_START_COMMAND no está definido." >&2
+  exit 1
+fi
+
 if [[ -z "${SOURCE_REPOSITORY-}" ]]; then
   echo "Error: SOURCE_REPOSITORY no está definido en $ENV_FILE" >&2
   exit 1
@@ -114,11 +128,21 @@ if [[ "$RESTART_SERVICE" == true ]]; then
     echo "Advertencia: no se encontró $PID_FILE. Se iniciará el servicio." >&2
   fi
 
-  echo "Iniciando servicio tailscale en segundo plano..."
+  if [[ -n "$TAILSCALE_BUILD_COMMAND" ]]; then
+    echo "Compilando la aplicación con '$TAILSCALE_BUILD_COMMAND'..."
+    (
+      cd "$SOURCE_REPOSITORY"
+      bash -lc "$TAILSCALE_BUILD_COMMAND"
+    )
+  else
+    echo "Omitiendo la compilación porque TAILSCALE_BUILD_COMMAND está vacío."
+  fi
+
+  echo "Iniciando servicio tailscale en segundo plano con '$TAILSCALE_START_COMMAND'..."
   (
     cd "$SOURCE_REPOSITORY"
     mkdir -p "$LOG_DIR"
-    nohup npm run tailscale >>"$LOG_FILE" 2>&1 &
+    nohup bash -lc "$TAILSCALE_START_COMMAND" >>"$LOG_FILE" 2>&1 &
     echo "$!" >"$PID_FILE"
   )
 
