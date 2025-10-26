@@ -29,7 +29,9 @@ El script hará lo siguiente:
 
 Si ejecutas el script con la opción `--restart`, además compilará la
 aplicación con el comando configurado y volverá a iniciar el servicio con
-la versión precompilada.
+la versión precompilada. Tras el reinicio, el script verifica que el
+proceso siga activo y muestra automáticamente las últimas líneas del log
+si detecta un fallo inmediato.
 
 Ejemplo:
 
