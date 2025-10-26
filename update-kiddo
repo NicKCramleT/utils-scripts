@@ -15,6 +15,27 @@ archivo de environment.
 USAGE
 }
 
+is_port_in_use() {
+  local port="$1"
+
+  if command -v ss >/dev/null 2>&1; then
+    if ss -ltn | awk -v port="$port" 'NR > 1 { split($4, a, ":"); if (a[length(a)] == port) { found=1; exit } } END { exit !found }'; then
+      return 0
+    else
+      return 1
+    fi
+  elif command -v netstat >/dev/null 2>&1; then
+    if netstat -tuln | awk -v port="$port" 'NR > 2 { split($4, a, ":"); if (a[length(a)] == port) { found=1; exit } } END { exit !found }'; then
+      return 0
+    else
+      return 1
+    fi
+  fi
+
+  # Si no se encuentra ninguna herramienta adecuada, asumir que el puerto está libre
+  return 1
+}
+
 if [[ ${1-} == "-h" || ${1-} == "--help" ]]; then
   usage
   exit 0
@@ -78,6 +99,15 @@ fi
 
 TAILSCALE_START_COMMAND="${TAILSCALE_START_COMMAND:-npm run start}"
 
+TAILSCALE_PORT="${TAILSCALE_PORT-}"
+
+if [[ -n "$TAILSCALE_PORT" ]]; then
+  if [[ ! "$TAILSCALE_PORT" =~ ^[0-9]+$ ]] || ((TAILSCALE_PORT < 1 || TAILSCALE_PORT > 65535)); then
+    echo "Error: TAILSCALE_PORT debe ser un número entre 1 y 65535." >&2
+    exit 1
+  fi
+fi
+
 if [[ -z "$TAILSCALE_START_COMMAND" ]]; then
   echo "Error: TAILSCALE_START_COMMAND no está definido." >&2
   exit 1
@@ -138,11 +168,50 @@ if [[ "$RESTART_SERVICE" == true ]]; then
     echo "Omitiendo la compilación porque TAILSCALE_BUILD_COMMAND está vacío."
   fi
 
+  PORT_TO_USE=""
+  if [[ -n "$TAILSCALE_PORT" ]]; then
+    PORT_SEARCH_LIMIT="${TAILSCALE_PORT_SEARCH_LIMIT:-10}"
+
+    if [[ ! "$PORT_SEARCH_LIMIT" =~ ^[0-9]+$ ]] || ((PORT_SEARCH_LIMIT < 1)); then
+      echo "Error: TAILSCALE_PORT_SEARCH_LIMIT debe ser un número entero positivo." >&2
+      exit 1
+    fi
+
+    PORT_CANDIDATE="$TAILSCALE_PORT"
+    for ((offset = 0; offset < PORT_SEARCH_LIMIT; offset++)); do
+      CURRENT_PORT=$((PORT_CANDIDATE + offset))
+
+      if ((CURRENT_PORT > 65535)); then
+        break
+      fi
+
+      if ! is_port_in_use "$CURRENT_PORT"; then
+        PORT_TO_USE="$CURRENT_PORT"
+        break
+      fi
+    done
+
+    if [[ -z "$PORT_TO_USE" ]]; then
+      echo "Error: no se encontró un puerto disponible comenzando desde $TAILSCALE_PORT en $PORT_SEARCH_LIMIT intentos." >&2
+      exit 1
+    fi
+
+    if [[ "$PORT_TO_USE" != "$TAILSCALE_PORT" ]]; then
+      echo "Advertencia: el puerto $TAILSCALE_PORT está en uso. Se utilizará el puerto disponible $PORT_TO_USE."
+    else
+      echo "Utilizando el puerto $PORT_TO_USE para iniciar el servicio tailscale."
+    fi
+  fi
+
   echo "Iniciando servicio tailscale en segundo plano con '$TAILSCALE_START_COMMAND'..."
   (
     cd "$SOURCE_REPOSITORY"
     mkdir -p "$LOG_DIR"
-    nohup bash -lc "$TAILSCALE_START_COMMAND" >>"$LOG_FILE" 2>&1 &
+    if [[ -n "$PORT_TO_USE" ]]; then
+      nohup bash -lc "PORT=$PORT_TO_USE $TAILSCALE_START_COMMAND" >>"$LOG_FILE" 2>&1 &
+    else
+      nohup bash -lc "$TAILSCALE_START_COMMAND" >>"$LOG_FILE" 2>&1 &
+    fi
     echo "$!" >"$PID_FILE"
   )
 

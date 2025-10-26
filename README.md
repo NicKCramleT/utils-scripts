@@ -12,7 +12,10 @@ Script que actualiza el repositorio de KiddoClimbs con una rama específica.
 2. Ajusta `TAILSCALE_BUILD_COMMAND` y `TAILSCALE_START_COMMAND` si necesitas personalizar los comandos de compilación o arranque.
    * Por defecto se ejecutará `npm run build` y luego `npm run start` en segundo plano.
    * Deja `TAILSCALE_BUILD_COMMAND` vacío para omitir la compilación previa.
-3. Opcional: agrega el directorio raíz de este proyecto a tu `PATH` o crea un alias para ejecutar el script desde cualquier lugar.
+3. Opcional: configura `TAILSCALE_PORT` y `TAILSCALE_PORT_SEARCH_LIMIT` para controlar en qué puerto se reinicia el servicio.
+   * Con `TAILSCALE_PORT` definido, el script comprobará si el puerto está libre y, de no estarlo, buscará automáticamente el siguiente disponible dentro del rango indicado por `TAILSCALE_PORT_SEARCH_LIMIT`.
+   * Si prefieres delegar por completo la elección del puerto al comando de arranque, deja `TAILSCALE_PORT` vacío.
+4. Opcional: agrega el directorio raíz de este proyecto a tu `PATH` o crea un alias para ejecutar el script desde cualquier lugar.
 
 ### Uso
 
@@ -31,7 +34,9 @@ Si ejecutas el script con la opción `--restart`, además compilará la
 aplicación con el comando configurado y volverá a iniciar el servicio con
 la versión precompilada. Tras el reinicio, el script verifica que el
 proceso siga activo y muestra automáticamente las últimas líneas del log
-si detecta un fallo inmediato.
+si detecta un fallo inmediato. Cuando `TAILSCALE_PORT` está definido, el
+reinicio también incluirá la comprobación de puertos ocupados para evitar
+fallos por `EADDRINUSE`.
 
 Ejemplo:
 
