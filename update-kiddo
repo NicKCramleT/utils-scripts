@@ -97,7 +97,7 @@ else
   TAILSCALE_BUILD_COMMAND="npm run build"
 fi
 
-TAILSCALE_START_COMMAND="${TAILSCALE_START_COMMAND:-npm run start}"
+TAILSCALE_START_COMMAND="${TAILSCALE_START_COMMAND:-npm run dev}"
 
 TAILSCALE_PORT="${TAILSCALE_PORT-}"
 
@@ -135,28 +135,7 @@ git -C "$SOURCE_REPOSITORY" pull origin "$BRANCH"
 echo "Repositorio actualizado correctamente."
 
 if [[ "$RESTART_SERVICE" == true ]]; then
-  PID_FILE="$SOURCE_REPOSITORY/tailscale.pid"
-  LOG_DIR="$SOURCE_REPOSITORY/logs"
-  LOG_FILE="$LOG_DIR/tailscale.log"
   echo "Reiniciando servicio tailscale..."
-
-  if [[ -f "$PID_FILE" ]]; then
-    PID_CONTENT="$(<"$PID_FILE")"
-    if [[ "$PID_CONTENT" =~ ^[0-9]+$ ]]; then
-      if kill -9 "$PID_CONTENT" 2>/dev/null; then
-        echo "Proceso tailscale detenido (PID $PID_CONTENT)."
-        rm -f "$PID_FILE"
-      else
-        echo "Advertencia: no se pudo detener el proceso con PID $PID_CONTENT." >&2
-        rm -f "$PID_FILE"
-      fi
-    else
-      echo "Advertencia: contenido inválido en $PID_FILE. Se iniciará el servicio nuevamente." >&2
-      rm -f "$PID_FILE"
-    fi
-  else
-    echo "Advertencia: no se encontró $PID_FILE. Se iniciará el servicio." >&2
-  fi
 
   if [[ -n "$TAILSCALE_BUILD_COMMAND" ]]; then
     echo "Compilando la aplicación con '$TAILSCALE_BUILD_COMMAND'..."
@@ -203,43 +182,11 @@ if [[ "$RESTART_SERVICE" == true ]]; then
     fi
   fi
 
-  echo "Iniciando servicio tailscale en segundo plano con '$TAILSCALE_START_COMMAND'..."
-  (
-    cd "$SOURCE_REPOSITORY"
-    mkdir -p "$LOG_DIR"
-    if [[ -n "$PORT_TO_USE" ]]; then
-      nohup bash -lc "PORT=$PORT_TO_USE $TAILSCALE_START_COMMAND" >>"$LOG_FILE" 2>&1 &
-    else
-      nohup bash -lc "$TAILSCALE_START_COMMAND" >>"$LOG_FILE" 2>&1 &
-    fi
-    echo "$!" >"$PID_FILE"
-  )
-
-  if [[ -f "$PID_FILE" ]]; then
-    NEW_PID="$(<"$PID_FILE")"
-
-    if [[ ! "$NEW_PID" =~ ^[0-9]+$ ]]; then
-      echo "Error: el archivo $PID_FILE contiene un valor no numérico." >&2
-      rm -f "$PID_FILE"
-      exit 1
-    fi
-
-    echo "Servicio tailscale iniciado (PID $NEW_PID). Verificando estado..."
-    sleep 2
-
-    if kill -0 "$NEW_PID" 2>/dev/null; then
-      echo "Servicio tailscale en ejecución. Los logs se guardan en $LOG_FILE."
-    else
-      echo "Error: el servicio tailscale finalizó inmediatamente después de iniciarse." >&2
-      if [[ -f "$LOG_FILE" ]]; then
-        echo "Últimas 40 líneas del log:" >&2
-        tail -n 40 "$LOG_FILE" >&2 || true
-      else
-        echo "No se encontró el archivo de log $LOG_FILE." >&2
-      fi
-      exit 1
-    fi
+  echo "Iniciando servicio tailscale en primer plano con '$TAILSCALE_START_COMMAND'..."
+  cd "$SOURCE_REPOSITORY"
+  if [[ -n "$PORT_TO_USE" ]]; then
+    PORT="$PORT_TO_USE" exec bash -lc "$TAILSCALE_START_COMMAND"
   else
-    echo "Advertencia: no se pudo registrar el PID del servicio tailscale." >&2
+    exec bash -lc "$TAILSCALE_START_COMMAND"
   fi
 fi
