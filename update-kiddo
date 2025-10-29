@@ -6,12 +6,14 @@ ENV_FILE="$SCRIPT_DIR/env/update-kiddo.env"
 
 usage() {
   cat <<USAGE
-Uso: update-kiddo <rama> [--restart]
+Uso: update-kiddo <rama> [--restart] [start]
 
 Actualiza el repositorio configurado en el archivo de environment
 utilizando la rama indicada. Si se especifica --restart, reinicia el
 servicio tailscale compilando y ejecutando los comandos definidos en el
-archivo de environment.
+archivo de environment. Si se indica el parámetro opcional start, se
+inicia el servicio ejecutando "npm run tailscale" y se genera un archivo
+tailscale.pid con el PID del proceso iniciado.
 USAGE
 }
 
@@ -50,11 +52,20 @@ fi
 
 BRANCH=""
 RESTART_SERVICE=false
+START_SERVICE=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -r|--restart)
       RESTART_SERVICE=true
+      shift
+      ;;
+    start)
+      if [[ "$START_SERVICE" == true ]]; then
+        echo "Error: el parámetro 'start' se especificó más de una vez." >&2
+        exit 1
+      fi
+      START_SERVICE=true
       shift
       ;;
     -*)
@@ -80,6 +91,11 @@ if [[ -z "$BRANCH" ]]; then
   echo "Error: debes indicar la rama a actualizar." >&2
   echo >&2
   usage >&2
+  exit 1
+fi
+
+if [[ "$RESTART_SERVICE" == true && "$START_SERVICE" == true ]]; then
+  echo "Error: no se puede utilizar --restart junto con 'start'." >&2
   exit 1
 fi
 
@@ -122,6 +138,8 @@ if [[ ! -d "$SOURCE_REPOSITORY" ]]; then
   echo "Error: el directorio $SOURCE_REPOSITORY no existe." >&2
   exit 1
 fi
+
+TAILSCALE_PID_FILE="$SOURCE_REPOSITORY/tailscale.pid"
 
 echo "Actualizando repositorio en $SOURCE_REPOSITORY..."
 
@@ -189,4 +207,31 @@ if [[ "$RESTART_SERVICE" == true ]]; then
   else
     exec bash -lc "$TAILSCALE_START_COMMAND"
   fi
+fi
+
+if [[ "$START_SERVICE" == true ]]; then
+  echo "Iniciando servicio tailscale con 'npm run tailscale'..."
+  cd "$SOURCE_REPOSITORY"
+  nohup npm run tailscale >/dev/null 2>&1 &
+  SERVICE_PID=$!
+  echo "Servicio iniciado con PID $SERVICE_PID. Guardando en $TAILSCALE_PID_FILE..."
+  if ! printf '%s\n' "$SERVICE_PID" > "$TAILSCALE_PID_FILE"; then
+    echo "Error: no se pudo escribir el archivo $TAILSCALE_PID_FILE." >&2
+    if kill "$SERVICE_PID" >/dev/null 2>&1; then
+      wait "$SERVICE_PID" >/dev/null 2>&1 || true
+    fi
+    exit 1
+  fi
+
+  if [[ ! -s "$TAILSCALE_PID_FILE" ]]; then
+    echo "Error: el archivo $TAILSCALE_PID_FILE no se creó correctamente." >&2
+    rm -f "$TAILSCALE_PID_FILE"
+    if kill "$SERVICE_PID" >/dev/null 2>&1; then
+      wait "$SERVICE_PID" >/dev/null 2>&1 || true
+    fi
+    exit 1
+  fi
+
+  cd "$SCRIPT_DIR"
+  echo "Archivo $TAILSCALE_PID_FILE creado correctamente."
 fi
